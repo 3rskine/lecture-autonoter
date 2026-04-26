@@ -1,0 +1,846 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "content": "~# docker exec -it n8n_core sh\nrm -f /root/.n8n-files/.processing\nclear the flag manually\n手動除flag\n(wsl)",
+        "width": 336
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -9552,
+        1136
+      ],
+      "id": "7f0a7d38-1a16-4430-a48b-b6b0513e1b59",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -10640,
+        1168
+      ],
+      "id": "97aa2a49-7d7c-4084-8af1-7ca18f7f7b78",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "command": "find /root/.n8n-files \\( -name \"*.wav\" -o -name \"*.m4a\" \\) -not -path \"*/temp_chunks/*\" -not -name \"*.done.*\" -not -name \"temp_input_course.wav\" | head -1"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -10544,
+        1168
+      ],
+      "id": "e931ecc2-09d3-4e70-a9bf-a7a507ac7e05",
+      "name": "Execute Command",
+      "notesInFlow": true,
+      "notes": "不限時間，只看有無 .done.，排除 temp_input_course.wav"
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.first().json.stdout?.trim();\nif (!stdout) return [];\n\nconst filePath = stdout;\nconst parts = filePath.split('/');\nconst filename = parts[parts.length - 1];\nlet category = parts[parts.length - 2];\n\n// 如果在 會議 子資料夾下，category 補上 會議_ 前綴\nif (parts.includes('會議') && category !== '會議') {\n  category = `會議_${category}`;\n}\n\nconsole.log(`找到待處理檔案：${category}/${filename}`);\nreturn [{ json: { body: { category, filename }, filePath } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10448,
+        1168
+      ],
+      "id": "afb360d2-3845-498e-96a0-360fadb492de",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "command": "=SOURCE=\"{{ $json.filePath }}\"\nif [ ! -f \"$SOURCE\" ]; then\n  echo \"ERROR: 來源檔案不存在 $SOURCE\"\n  exit 1\nfi\nif [ -f /root/.n8n-files/.processing ]; then\n  AGE=$(find /root/.n8n-files/.processing -mmin +180 | wc -l)\n  if [ \"$AGE\" -gt 0 ]; then\n    rm -f /root/.n8n-files/.processing\n    echo \"舊 flag 超時已清除，繼續執行\"\n  else\n    echo \"BUSY\"\n    exit 0\n  fi\nfi\ntouch /root/.n8n-files/.processing\nmkdir -p /root/.n8n-files/temp_chunks\ncp \"$SOURCE\" /root/.n8n-files/temp_input_course.wav\nif [ $? -ne 0 ]; then\n  rm -f /root/.n8n-files/.processing\n  echo \"ERROR: 複製失敗\"\n  exit 1\nfi\nmv \"$SOURCE\" \"${SOURCE}.done\"\necho \"OK\""
+      },
+      "id": "b8dfbee9-230c-4875-9c10-f9d2905862b6",
+      "name": "複製音檔到安全區1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -10352,
+        1264
+      ],
+      "notesInFlow": true,
+      "onError": "continueErrorOutput",
+      "notes": "防呆版：來源存在→flag檢查→複製→標記done，失敗自動清flag"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst stdout = result.stdout?.trim() || '';\nconst exitCode = result.exitCode;\nif (exitCode !== 0 || stdout.startsWith('ERROR') || stdout === 'BUSY') {\n  console.log('停止原因：', stdout || `exitCode=${exitCode}`);\n  return [];\n}\nconsole.log('音檔複製成功，繼續流程');\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -10256,
+        1264
+      ],
+      "id": "0b06876b-3a38-4b5a-93f7-8c7294477955",
+      "name": "Code in JavaScript",
+      "notesInFlow": true,
+      "notes": "用 exitCode 判斷，比字串比對更穩定"
+    },
+    {
+      "parameters": {
+        "command": "touch /root/.n8n-files/.last_check"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -10160,
+        1264
+      ],
+      "id": "791127b2-802c-4fd0-9233-fe14b8fee559",
+      "name": "touch"
+    },
+    {
+      "parameters": {
+        "command": "rm -f /root/.n8n-files/temp_chunks/part_*.wav /root/.n8n-files/temp_chunks/part_*.m4a && echo \"已清空舊切片\""
+      },
+      "id": "e03894cb-2632-40b9-92e0-49ea82d08925",
+      "name": "清空舊切片1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -10048,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "command": "INPUT=\"/root/.n8n-files/temp_input_course.wav\"\nif [ ! -f \"$INPUT\" ]; then echo \"ERROR: temp_input_course.wav 不存在\"; exit 1; fi\nffmpeg -y -i \"$INPUT\" -f segment -segment_time 600 -c:a pcm_s16le /root/.n8n-files/temp_chunks/part_%03d.wav 2>&1 | tail -3\necho \"FFmpeg 完成\""
+      },
+      "id": "337f82da-982f-4ffa-9794-c2996252649c",
+      "name": "FFmpeg 自動切片1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -9952,
+        1344
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "command": "sync && FILE_COUNT=$(ls /root/.n8n-files/temp_chunks/part_*.wav 2>/dev/null | wc -l)\nif [ \"$FILE_COUNT\" -eq 0 ]; then echo \"ERROR: 沒有切片產生\"; exit 1; fi\necho \"切片完成，共 $FILE_COUNT 個\"\nls -lh /root/.n8n-files/temp_chunks/part_*.wav"
+      },
+      "id": "f76a36d6-4184-4cff-9e66-6e925d388936",
+      "name": "確認切片完成1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -9856,
+        1344
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/root/.n8n-files/temp_chunks/part_*.wav"
+      },
+      "id": "b2db4452-89f9-4775-8c37-77ae3224a54b",
+      "name": "讀取所有切片1",
+      "type": "n8n-nodes-base.readBinaryFiles",
+      "typeVersion": 1,
+      "position": [
+        -9696,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst wfStatic = $getWorkflowStaticData('global');\nwfStatic['current_run'] = { totalChunks: items.length, completedCount: 0, results: [] };\nconsole.log(`初始化完成，共 ${items.length} 個切片`);\nreturn items.map((item, index) => ({\n  json: { chunkIndex: index, totalChunks: items.length },\n  binary: { data: Object.values(item.binary)[0] }\n}));"
+      },
+      "id": "cd4b0052-45b8-4bf7-bf91-306e300e19b5",
+      "name": "初始化靜態容器1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9568,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "caf356b9-009a-4669-9ce6-aa42f30a2f73",
+      "name": "Loop 切片處理1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -9408,
+        1344
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://whisper:8000/v1/audio/transcriptions",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "model",
+              "value": "Systran/faster-whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "json"
+            },
+            {
+              "name": "condition_on_previous_text",
+              "value": "false"
+            },
+            {
+              "name": "temperature",
+              "value": "0.0"
+            },
+            {
+              "name": "vad_filter",
+              "value": "true"
+            },
+            {
+              "name": "compression_ratio_threshold",
+              "value": "2.0"
+            },
+            {
+              "name": "logprob_threshold",
+              "value": "-1.0"
+            },
+            {
+              "name": "no_speech_threshold",
+              "value": "0.6"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "id": "bf3bb7d9-4b11-4a54-bc0e-4bf0da973e15",
+      "name": "Whisper ASR 辨識",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -9232,
+        1360
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst wfStatic = $getWorkflowStaticData('global');\nif (!wfStatic['current_run']) {\n  wfStatic['current_run'] = { totalChunks: 0, completedCount: 0, results: [] };\n}\nif (items[0]?.json?.error) {\n  wfStatic['current_run'].completedCount += 1;\n  return [{ json: { completed: wfStatic['current_run'].completedCount, total: wfStatic['current_run'].totalChunks } }];\n}\nlet text = items[0]?.json?.text || '';\nconst lines = text.split(/[，。？！\\n]/);\nconst seen = {};\nlet cleanLines = [];\nfor (const line of lines) {\n  const trimmed = line.trim();\n  if (!trimmed) continue;\n  seen[trimmed] = (seen[trimmed] || 0) + 1;\n  if (seen[trimmed] <= 3) cleanLines.push(trimmed);\n}\ntext = cleanLines.join('，');\nwfStatic['current_run'].results.push(text);\nwfStatic['current_run'].completedCount += 1;\nconst completed = wfStatic['current_run'].completedCount;\nconst total = wfStatic['current_run'].totalChunks;\nconsole.log(`已完成 ${completed} / ${total} 個切片`);\nreturn [{ json: { completed, total } }];"
+      },
+      "id": "3aacacd8-35e5-4460-9786-3ab7c0658479",
+      "name": "累積 ASR 結果1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9072,
+        1360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const wfStatic = $getWorkflowStaticData('global');\nconst container = wfStatic['current_run'] || { results: [] };\nfunction cleanHallucinations(text) {\n  if (!text) return '';\n  let cleaned = text.replace(/(.{2,10}?)\\1{3,}/g, '$1');\n  cleaned = cleaned.replace(/(.)\\1{5,}/g, '$1');\n  return cleaned.trim();\n}\nconst fullText = container.results\n  .filter(t => t && t.trim().length > 0)\n  .map(t => cleanHallucinations(t))\n  .join('\\n\\n');\nconsole.log(`逐字稿組合完成，共 ${container.results.length} 段`);\nreturn [{ json: { fullText } }];"
+      },
+      "id": "d0813160-bfa0-4b3b-9f33-2fefb6890f1a",
+      "name": "組合完整逐字稿",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -9040,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "meeting-01",
+              "leftValue": "={{ $('Code in JavaScript1').item.json.body.category }}",
+              "rightValue": "會議",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "87c9180e-4492-479d-8d97-ef6335491207",
+      "name": "IF 會議判斷",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -8624,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-flash-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=你是一位專業的課程助教。請幫我根據以下的課程逐字稿，整理出一份結構化的重點摘要，並出測驗題迫使學生主動回憶（15題單選、5題簡答），並在最後提供參考答案與簡單解析\n\n**內容：**\n{{ $('組合完整逐字稿').item.json.fullText }}\n\n請用繁體中文與台灣用語輸出，並使用 Markdown 格式進行優美排版（如標題、粗體、條列式）\n\n特別注意：因為此筆記會透過 Gmail 寄送，Gmail 不支援 LaTeX 數學渲染。\n請「絕對禁止」使用 $ 符號包裹公式。\n所有數學式請改用純文字表達（例如用 ^ 代表次方、sqrt 代表根號、/ 代表分數），確保在不支援數學排版的電子郵件中也能清晰閱讀。"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -8656,
+        1344
+      ],
+      "id": "11930bfd-db84-4262-9d8e-eb1bc3b50b75",
+      "name": "Gemini 筆記與出題1",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "maxTries": 5,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "RkdEEXB9H39KMx2w",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p \"/data/obsidian_vault/{{ $('Code in JavaScript1').item.json.body.category }}\" && cat > \"/data/obsidian_vault/{{ $('Code in JavaScript1').item.json.body.category }}/AI_筆記_{{ $now.format('yyyy-MM-dd_HHmm') }}.md\" <<'EOF'\n{{ $json.content.parts[0].text }}\nEOF"
+      },
+      "id": "772a2b27-41b8-481b-808c-88a95bdc27a4",
+      "name": "寫入 Obsidian1",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -8304,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "markdownToHtml",
+        "markdown": "={{ $('Gemini 筆記與出題1').item.json.content.parts[0].text }}",
+        "options": {}
+      },
+      "id": "659e45d3-9a44-464f-97f4-5a998e74d88f",
+      "name": "Markdown 轉 HTML1",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        -8144,
+        1360
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "411421246@gms.ndhu.edu.tw",
+        "subject": "=📚 {{ $('Code in JavaScript1').item.json.body.category }}課程筆記 - {{ $now.format('yyyy-MM-dd') }}",
+        "message": "=<h2>📚 {{ $('Code in JavaScript1').item.json.body.category }} 課程筆記</h2>\n<p><strong>錄音時間：</strong>{{ $now.format('yyyy-MM-dd HH:mm') }}</p>\n<hr>\n{{ $json.data }}",
+        "options": {}
+      },
+      "id": "444a6314-806d-4c23-9b44-c7df801479ab",
+      "name": "寄送 Gmail 複習信",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -8000,
+        1360
+      ],
+      "webhookId": "91f0fc49-a1e9-4f15-b313-bdb64a157cd1",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vbxycL3v0g2regtj",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "rm -f /root/.n8n-files/temp_chunks/part_*.wav\nrm -f /root/.n8n-files/temp_chunks/part_*.m4a\nrm -f /root/.n8n-files/temp_input_course.wav\nrm -f /root/.n8n-files/.processing\necho \"清理完成（一般課程）\""
+      },
+      "id": "33140e3d-7335-46cd-bb2c-0467319008a8",
+      "name": "清理暫存檔",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -7872,
+        1360
+      ],
+      "notesInFlow": true,
+      "notes": "一般課程流程結束，清理全部暫存 + flag"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3-flash-preview",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3-flash-preview"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=你是一位專業的會議記錄助理。請根據以下會議逐字稿，整理出一份結構清晰的會議紀錄。\n\n【重要說明】\n這份逐字稿由 AI 語音辨識生成，可能包含少量辨識錯誤或重複字句，請自行判斷並過濾無意義內容，聚焦在實質討論上。\n\n請依照以下格式輸出，使用 Markdown 排版：\n\n---\n\n## 📋 基本資訊\n- **會議名稱**：{{ $('Code in JavaScript1').item.json.body.category }}\n- **日期**：{{ $now.format('yyyy-MM-dd') }}\n- **會議目的**：（從逐字稿判斷）\n\n---\n\n## 🎯 討論重點\n（條列主要討論議題，特別標注有不同意見或爭論的地方）\n\n---\n\n## ⚖️ 關鍵理由 / 取捨\n（各方觀點與選擇某個方向的理由）\n\n---\n\n## 💡 影響後續決策的觀點\n（哪些想法或資訊會左右接下來的方向）\n\n---\n\n## ✅ 決議事項\n（明確列出最終決定了什麼，用條列式）\n\n---\n\n## 📌 行動項目\n| 負責人 | 任務內容 | 期限 |\n|--------|---------|------|\n（若逐字稿未明確提到負責人或期限，填「待確認」）\n\n---\n\n## 📅 下次會議安排\n（若有提到則填入，否則填「未安排」）\n\n---\n\n## 🗒️ 補充備註\n（其他值得記錄但未歸類的資訊）\n\n---\n\n> 會議記錄 = 決定 + 行動 + 責任\n\n請用繁體中文與台灣用語輸出。禁止使用 $ 符號包裹任何內容。\n\n【逐字稿內容如下】：\n{{ $('組合完整逐字稿').item.json.fullText }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -8384,
+        1152
+      ],
+      "id": "6e6d9de9-ec18-46ff-a36e-e86f9efaed74",
+      "name": "Gemini 會議紀錄",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "RkdEEXB9H39KMx2w",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "=CATEGORY=\"{{ $('Code in JavaScript1').item.json.body.category }}\"\nmkdir -p \"/data/obsidian_vault/會議/${CATEGORY}\" && cat > \"/data/obsidian_vault/會議/${CATEGORY}/會議紀錄_{{ $now.format('yyyy-MM-dd_HHmm') }}.md\" <<'OBSEOF'\n{{ $json.content.parts[0].text }}\nOBSEOF"
+      },
+      "id": "433ec0b6-6d8b-426d-8412-642a8eb938b2",
+      "name": "會議_寫入Obsidian",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -8144,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "markdownToHtml",
+        "markdown": "={{ $('Gemini 會議紀錄').item.json.content.parts[0].text }}",
+        "options": {}
+      },
+      "id": "512d4f5d-d857-4e5d-af55-8efedf5e4661",
+      "name": "會議_Markdown轉HTML",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        -8048,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "411421246@gms.ndhu.edu.tw",
+        "subject": "=📝 會議紀錄｜{{ $('Code in JavaScript1').item.json.body.category }} - {{ $now.format('yyyy-MM-dd') }}",
+        "message": "=<h2>📝 會議紀錄</h2>\n<p><strong>會議：</strong>{{ $('Code in JavaScript1').item.json.body.category }}</p>\n<p><strong>時間：</strong>{{ $now.format('yyyy-MM-dd HH:mm') }}</p>\n<hr>\n{{ $json.data }}",
+        "options": {}
+      },
+      "id": "1f769179-8fe5-4088-9ebd-e33680c2c55f",
+      "name": "會議_寄送Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -7872,
+        1152
+      ],
+      "webhookId": "meeting-gmail-webhook-01",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vbxycL3v0g2regtj",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "command": "rm -f /root/.n8n-files/temp_chunks/part_*.wav\nrm -f /root/.n8n-files/temp_input_course.wav\nrm -f /root/.n8n-files/.processing\necho \"清理完成（會議流程）\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -7712,
+        1152
+      ],
+      "id": "e6200166-2388-4cbe-987e-e016c9692884",
+      "name": "清理暫存檔_會議",
+      "notesInFlow": true,
+      "notes": "會議流程結束，清理暫存 + flag"
+    },
+    {
+      "parameters": {
+        "sendTo": "411421246@gms.ndhu.edu.tw",
+        "subject": "=📝 {{ $('Code in JavaScript1').item.json.body.category }} 課堂逐字稿 - {{ $now.format('yyyy-MM-dd') }}",
+        "message": "=<h2>📝 {{ $('Code in JavaScript1').item.json.body.category }} 課堂逐字稿</h2>\n<p><strong>錄音時間：</strong>{{ $now.format('yyyy-MM-dd HH:mm') }}</p>\n<hr>\n<pre style=\"font-family: monospace; white-space: pre-wrap; font-size: 13px; background: #f5f5f5; padding: 16px; border-radius: 4px;\">\n{{ $('組合完整逐字稿').item.json.fullText }}\n</pre>",
+        "options": {}
+      },
+      "id": "2790a906-2d77-4f99-8fa9-5d21cf2f833c",
+      "name": "寄送課堂逐字稿",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -8928,
+        1200
+      ],
+      "webhookId": "la-gmail-webhook-01",
+      "notesInFlow": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "vbxycL3v0g2regtj",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "常駐功能：所有課程都寄逐字稿"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "複製音檔到安全區1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "複製音檔到安全區1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "touch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "touch": {
+      "main": [
+        [
+          {
+            "node": "清空舊切片1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清空舊切片1": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg 自動切片1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg 自動切片1": {
+      "main": [
+        [
+          {
+            "node": "確認切片完成1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "確認切片完成1": {
+      "main": [
+        [
+          {
+            "node": "讀取所有切片1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "讀取所有切片1": {
+      "main": [
+        [
+          {
+            "node": "初始化靜態容器1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "初始化靜態容器1": {
+      "main": [
+        [
+          {
+            "node": "Loop 切片處理1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop 切片處理1": {
+      "main": [
+        [
+          {
+            "node": "組合完整逐字稿",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Whisper ASR 辨識",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Whisper ASR 辨識": {
+      "main": [
+        [
+          {
+            "node": "累積 ASR 結果1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "累積 ASR 結果1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "累積 ASR 結果1": {
+      "main": [
+        [
+          {
+            "node": "Loop 切片處理1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "組合完整逐字稿": {
+      "main": [
+        [
+          {
+            "node": "寄送課堂逐字稿",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF 會議判斷": {
+      "main": [
+        [
+          {
+            "node": "Gemini 會議紀錄",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 筆記與出題1": {
+      "main": [
+        [
+          {
+            "node": "寫入 Obsidian1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "寫入 Obsidian1": {
+      "main": [
+        [
+          {
+            "node": "Markdown 轉 HTML1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown 轉 HTML1": {
+      "main": [
+        [
+          {
+            "node": "寄送 Gmail 複習信",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "寄送 Gmail 複習信": {
+      "main": [
+        [
+          {
+            "node": "清理暫存檔",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini 會議紀錄": {
+      "main": [
+        [
+          {
+            "node": "會議_寫入Obsidian",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "會議_寫入Obsidian": {
+      "main": [
+        [
+          {
+            "node": "會議_Markdown轉HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "會議_Markdown轉HTML": {
+      "main": [
+        [
+          {
+            "node": "會議_寄送Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "會議_寄送Gmail": {
+      "main": [
+        [
+          {
+            "node": "清理暫存檔_會議",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "寄送課堂逐字稿": {
+      "main": [
+        [
+          {
+            "node": "Gemini 筆記與出題1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF 會議判斷",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0c3846b750a87a07c835e02ed02cc32d6554b2388dc6b2371fad5ec698afae08"
+  }
+}

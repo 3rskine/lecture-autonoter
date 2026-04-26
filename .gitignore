@@ -1,0 +1,24 @@
+# n8n 
+n8n_data/
+n8n_temp/
+
+# audio
+audio_input/
+*.m4a
+*.wav
+*.mkv
+*.done
+
+# module
+whisper_models/
+
+# class and log
+categories.txt
+ffmpeg_last.log
+backups/
+
+# env
+.venv/
+autonoter/
+__pycache__/
+*.pyc

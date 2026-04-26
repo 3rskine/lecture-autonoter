@@ -1,0 +1,39 @@
+services:
+  n8n:
+    build: .
+    container_name: n8n_core
+    user: "root"
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Asia/Taipei
+      - TZ=Asia/Taipei
+      - N8N_USER_FOLDER=/home/node
+      - NODES_EXCLUDE=[]
+      - N8N_RESTRICT_FILE_ACCESS_TO=/root/.n8n-files
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./audio_input:/root/.n8n-files
+      - "/mnt/c/3rskine'md:/data/obsidian_vault"
+    links:
+      - whisper
+
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cuda
+    container_name: whisper-api
+    restart: unless-stopped
+    environment:
+      - WHISPER__MODEL=Systran/faster-whisper-large-v3
+      - WHISPER__INFERENCE_DEVICE=cuda
+    ports:
+      - "9000:8000"
+    volumes:
+      - ./whisper_models:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
