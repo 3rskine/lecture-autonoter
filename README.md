@@ -8,7 +8,6 @@
 
 An automated pipeline that transcribes lecture recordings, generates structured notes and quiz questions, saves them to Obsidian, and emails the result to Gmail — without any manual steps after the recording ends.
 
-[繁中](#繁中版)
 
 ## Motivation
 
