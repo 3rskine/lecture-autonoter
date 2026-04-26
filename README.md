@@ -1,5 +1,3 @@
-# Lecture Audio Automation System
-
 [English](#english) | [繁中](#繁中版)
 
 ---
